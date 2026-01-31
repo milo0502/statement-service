@@ -1,0 +1,17 @@
+spring:
+  datasource:
+    url: ${DB_URL}
+    username: ${DB_USER}
+    password: ${DB_PASS}
+  flyway:
+    enabled: true
+
+app:
+  s3:
+    endpoint: ${S3_ENDPOINT}
+    region: ${S3_REGION}
+    accessKey: ${S3_ACCESS_KEY}
+    secretKey: ${S3_SECRET_KEY}
+    bucket: ${S3_BUCKET}
+  security:
+    jwtSecretBase64: ${JWT_SECRET_BASE64}
