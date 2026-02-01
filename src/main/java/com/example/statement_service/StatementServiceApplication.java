@@ -8,6 +8,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
  * This class initializes and starts the Spring Boot application.
  */
 @SpringBootApplication
+@org.springframework.boot.context.properties.ConfigurationPropertiesScan
 public class StatementServiceApplication {
 
 	/**

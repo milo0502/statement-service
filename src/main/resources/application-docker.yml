@@ -9,6 +9,7 @@ spring:
 app:
   s3:
     endpoint: ${S3_ENDPOINT}
+    externalEndpoint: ${S3_EXTERNAL_ENDPOINT}
     region: ${S3_REGION}
     accessKey: ${S3_ACCESS_KEY}
     secretKey: ${S3_SECRET_KEY}

@@ -1,6 +1,7 @@
 package com.example.statement_service;
 
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -59,7 +60,7 @@ class StatementServiceIT {
         r.add("spring.flyway.enabled", () -> "true");
 
         r.add("app.s3.endpoint", () -> minio.getS3URL());
-        r.add("app.s3.region", () -> "us-east-1");
+        r.add("app.s3.region", () -> "af-south-1");
         r.add("app.s3.accessKey", () -> "minio");
         r.add("app.s3.secretKey", () -> "minio12345");
         r.add("app.s3.bucket", () -> BUCKET);
@@ -73,7 +74,7 @@ class StatementServiceIT {
         S3Client s3 = S3Client.builder()
                 .endpointOverride(URI.create(minio.getS3URL()))
                 .credentialsProvider(StaticCredentialsProvider.create(AwsBasicCredentials.create("minio", "minio12345")))
-                .region(Region.of("us-east-1"))
+                .region(Region.of("af-south-1"))
                 .forcePathStyle(true)
                 .build();
 
@@ -90,8 +91,18 @@ class StatementServiceIT {
         }
     }
 
-    @Autowired
+    @Autowired(required = false)
     private WebTestClient webTestClient;
+
+    @BeforeEach
+    void setupWebClient() {
+        if (webTestClient == null) {
+            webTestClient = WebTestClient.bindToServer().baseUrl("http://localhost:" + port).build();
+        }
+    }
+
+    @org.springframework.boot.test.web.server.LocalServerPort
+    private int port;
 
     @Test
     void upload_list_presign_and_revoke_flow() throws Exception {
@@ -116,7 +127,7 @@ class StatementServiceIT {
                 .contentType(MediaType.MULTIPART_FORM_DATA)
                 .body(BodyInserters.fromMultipartData(mb.build()))
                 .exchange()
-                .expectStatus().isOk()
+                .expectStatus().isCreated()
                 .expectBody(String.class)
                 .returnResult()
                 .getResponseBody();
@@ -167,6 +178,27 @@ class StatementServiceIT {
         assertThat(dl.statusCode()).isEqualTo(200);
         assertThat(dl.body().length).isGreaterThan(10);
 
+        // 6.5) Direct download redirect
+        webTestClient.get()
+                .uri("/api/v1/statements/{id}/download", statementId)
+                .headers(h -> h.setBearerAuth(custToken))
+                .exchange()
+                .expectStatus().isFound() // 302
+                .expectHeader().exists("Location");
+
+        // 6.6) Check audit for DOWNLOAD
+        String auditBody = webTestClient.get()
+                .uri("/api/v1/audit-events")
+                .headers(h -> h.setBearerAuth(adminToken))
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody(String.class)
+                .returnResult()
+                .getResponseBody();
+
+        assertThat(auditBody).contains("\"action\":\"DOWNLOAD\"");
+        assertThat(auditBody).contains("\"statementId\":\"" + statementId + "\"");
+
         // 7) Revoke (admin)
         webTestClient.post()
                 .uri("/api/v1/statements/{id}/revoke", statementId)
@@ -180,6 +212,13 @@ class StatementServiceIT {
                 .headers(h -> h.setBearerAuth(custToken))
                 .contentType(MediaType.APPLICATION_JSON)
                 .bodyValue("{\"ttlSeconds\":300}")
+                .exchange()
+                .expectStatus().isBadRequest();
+
+        // 9) Direct download should also fail (400)
+        webTestClient.get()
+                .uri("/api/v1/statements/{id}/download", statementId)
+                .headers(h -> h.setBearerAuth(custToken))
                 .exchange()
                 .expectStatus().isBadRequest();
     }

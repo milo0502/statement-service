@@ -14,8 +14,16 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 @ConfigurationProperties(prefix = "app.s3")
 public record S3Properties(
         String endpoint,
+        String externalEndpoint,
         String region,
         String accessKey,
         String secretKey,
         String bucket
-) {}
+) {
+    public String presignEndpoint() {
+        if (externalEndpoint != null && !externalEndpoint.isBlank() && !externalEndpoint.startsWith("${")) {
+            return externalEndpoint;
+        }
+        return endpoint;
+    }
+}

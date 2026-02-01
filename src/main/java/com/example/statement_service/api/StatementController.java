@@ -157,6 +157,36 @@ public class StatementController {
     }
 
     /**
+     * Downloads a statement by redirecting to a presigned URL.
+     * Logs a 'DOWNLOAD' audit event.
+     *
+     * @param auth the authentication object
+     * @param id   the UUID of the statement
+     * @param http the HTTP request for auditing purposes
+     * @return a redirect to the presigned S3 URL
+     */
+    @PreAuthorize("hasAuthority('SCOPE_customer') or hasAuthority('SCOPE_admin')")
+    @GetMapping("/{id}/download")
+    public ResponseEntity<Void> download(
+            Authentication auth,
+            @PathVariable UUID id,
+            HttpServletRequest http
+    ) {
+        log.info("Downloading statement id={}", id);
+        String customerId = currentCustomer.customerId(auth);
+        Statement s = statementService.getForCustomer(id, customerId);
+
+        // Short TTL for redirect
+        String url = statementService.presignDownloadUrl(s, Duration.ofMinutes(1));
+
+        auditService.log(customerId, "DOWNLOAD", s.getId(), http.getRemoteAddr(), http.getHeader("User-Agent"));
+
+        return ResponseEntity.status(HttpStatus.FOUND)
+                .location(java.net.URI.create(url))
+                .build();
+    }
+
+    /**
      * Revokes a statement, making it unavailable for download. Restricted to 'admin' scope.
      *
      * @param id  the UUID of the statement to revoke

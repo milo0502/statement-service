@@ -114,6 +114,12 @@
 			<artifactId>spring-boot-starter-test</artifactId>
 			<scope>test</scope>
 		</dependency>
+
+		<dependency>
+			<groupId>org.mockito</groupId>
+			<artifactId>mockito-junit-jupiter</artifactId>
+			<scope>test</scope>
+		</dependency>
 		<dependency>
 			<groupId>org.springframework.security</groupId>
 			<artifactId>spring-security-test</artifactId>
@@ -147,6 +153,11 @@
 			<version>${testcontainers.version}</version>
 			<scope>test</scope>
 		</dependency>
+		<dependency>
+			<groupId>com.h2database</groupId>
+			<artifactId>h2</artifactId>
+			<scope>test</scope>
+		</dependency>
 	</dependencies>
 
 	<build>
@@ -167,6 +178,13 @@
 				<artifactId>maven-compiler-plugin</artifactId>
 				<configuration>
 					<release>25</release>
+
+					<compilerArgs>
+						<arg>-Xlint:-preview</arg>
+						<arg>--add-opens</arg>
+						<arg>java.base/java.lang=ALL-UNNAMED</arg>
+					</compilerArgs>
+
 					<annotationProcessorPaths>
 						<path>
 							<groupId>org.projectlombok</groupId>
