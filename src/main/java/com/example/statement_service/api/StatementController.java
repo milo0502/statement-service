@@ -5,13 +5,19 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.util.UUID;
 
+import com.example.statement_service.ratelimit.InMemoryRateLimiter;
+import com.example.statement_service.service.BadRequestException;
+import com.example.statement_service.service.TooManyRequestsException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
@@ -24,38 +30,78 @@ import com.example.statement_service.domain.Statement;
 import com.example.statement_service.security.CurrentCustomer;
 import com.example.statement_service.service.AuditService;
 import com.example.statement_service.service.StatementService;
+import org.springframework.web.util.UriComponentsBuilder;
 
+/**
+ * REST controller for managing bank statements.
+ * Provides endpoints for uploading, listing, retrieving, and revoking statements,
+ * as well as generating download links.
+ */
 @RestController
 @RequestMapping("/api/v1/statements")
 public class StatementController {
 
+    private static final Logger log = LoggerFactory.getLogger(StatementController.class);
+
     private final StatementService statementService;
     private final AuditService auditService;
     private final CurrentCustomer currentCustomer;
+    private final InMemoryRateLimiter rateLimiter;
 
-    public StatementController(StatementService statementService, AuditService auditService, CurrentCustomer currentCustomer) {
+    /**
+     * Constructs a new StatementController with the required services.
+     *
+     * @param statementService the service for statement operations
+     * @param auditService     the service for logging audit events
+     * @param currentCustomer the helper for getting the current customer from authentication
+     */
+    public StatementController(StatementService statementService, AuditService auditService, CurrentCustomer currentCustomer, InMemoryRateLimiter rateLimiter) {
         this.statementService = statementService;
         this.auditService = auditService;
         this.currentCustomer = currentCustomer;
+        this.rateLimiter = rateLimiter;
     }
 
-    // ADMIN upload
+    /**
+     * Uploads a new statement. Restricted to users with 'admin' scope.
+     *
+     * @param customerId  the ID of the customer the statement belongs to
+     * @param accountId   the ID of the account the statement belongs to
+     * @param periodStart the start date of the statement period
+     * @param periodEnd   the end date of the statement period
+     * @param file        the statement file to upload
+     * @param req         the HTTP request for auditing purposes
+     * @return the metadata of the uploaded statement
+     */
     @PreAuthorize("hasAuthority('SCOPE_admin')")
     @PostMapping(consumes = "multipart/form-data")
-    public StatementResponse upload(
+    public ResponseEntity<StatementResponse> upload(
             @RequestParam("customerId") String customerId,
             @RequestParam("accountId") String accountId,
             @RequestParam("periodStart") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate periodStart,
             @RequestParam("periodEnd") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate periodEnd,
             @RequestPart("file") MultipartFile file,
-            HttpServletRequest req
+            HttpServletRequest req,
+            UriComponentsBuilder uriBuilder
     ) {
         Statement s = statementService.upload(customerId, accountId, periodStart, periodEnd, file);
         auditService.log(customerId, "UPLOAD", s.getId(), req.getRemoteAddr(), req.getHeader("User-Agent"));
-        return StatementResponse.from(s);
+
+        var location = uriBuilder
+                .path("/api/v1/statements/{id}")
+                .buildAndExpand(s.getId())
+                .toUri();
+
+        return ResponseEntity.created(location).body(StatementResponse.from(s));
     }
 
-    // CUSTOMER list own
+    /**
+     * Lists statements for the authenticated customer. Restricted to 'customer' or 'admin' scope.
+     *
+     * @param auth     the authentication object
+     * @param pageable pagination information
+     * @return a page of statement metadata
+     */
     @PreAuthorize("hasAuthority('SCOPE_customer') or hasAuthority('SCOPE_admin')")
     @GetMapping
     public Page<StatementResponse> list(Authentication auth, Pageable pageable) {
@@ -63,7 +109,13 @@ public class StatementController {
         return statementService.listForCustomer(customerId, pageable).map(StatementResponse::from);
     }
 
-    // CUSTOMER get own metadata
+    /**
+     * Retrieves metadata for a specific statement. Restricted to the owner or 'admin'.
+     *
+     * @param auth the authentication object
+     * @param id   the UUID of the statement
+     * @return the statement metadata
+     */
     @PreAuthorize("hasAuthority('SCOPE_customer') or hasAuthority('SCOPE_admin')")
     @GetMapping("/{id}")
     public StatementResponse get(Authentication auth, @PathVariable UUID id) {
@@ -71,7 +123,15 @@ public class StatementController {
         return StatementResponse.from(statementService.getForCustomer(id, customerId));
     }
 
-    // CUSTOMER generate presigned link
+    /**
+     * Generates a presigned download link for a statement. Restricted to the owner or 'admin'.
+     *
+     * @param auth    the authentication object
+     * @param id      the UUID of the statement
+     * @param request the request containing TTL for the link
+     * @param http    the HTTP request for auditing purposes
+     * @return the download link and its expiration time
+     */
     @PreAuthorize("hasAuthority('SCOPE_customer') or hasAuthority('SCOPE_admin')")
     @PostMapping("/{id}/download-link")
     public DownloadLinkResponse downloadLink(
@@ -80,6 +140,11 @@ public class StatementController {
             @Valid @RequestBody DownloadLinkRequest request,
             HttpServletRequest http
     ) {
+        if (!rateLimiter.tryConsume("download-link:" + id)) {
+            throw new TooManyRequestsException("Too many download-link requests, please retry later.");
+        }
+
+        log.info("Generating download link statementId={} ttlSeconds={}", id, request.ttlSeconds());
         String customerId = currentCustomer.customerId(auth);
         Statement s = statementService.getForCustomer(id, customerId);
 
@@ -91,6 +156,12 @@ public class StatementController {
         return new DownloadLinkResponse(url, Instant.now().plus(ttl));
     }
 
+    /**
+     * Revokes a statement, making it unavailable for download. Restricted to 'admin' scope.
+     *
+     * @param id  the UUID of the statement to revoke
+     * @param req the HTTP request for auditing purposes
+     */
     @PreAuthorize("hasAuthority('SCOPE_admin')")
     @PostMapping("/{id}/revoke")
     @ResponseStatus(HttpStatus.NO_CONTENT)

@@ -11,10 +11,21 @@ import org.springframework.security.oauth2.server.resource.authentication.JwtAut
 import org.springframework.security.oauth2.server.resource.authentication.JwtGrantedAuthoritiesConverter;
 import org.springframework.security.web.SecurityFilterChain;
 
+/**
+ * General security configuration for the application.
+ * Enables method-level security and configures the OAuth2 resource server.
+ */
 @Configuration
 @EnableMethodSecurity
 public class SecurityConfig {
 
+    /**
+     * Configures the security filter chain.
+     *
+     * @param http the {@link HttpSecurity} to configure
+     * @return the configured {@link SecurityFilterChain}
+     * @throws Exception if an error occurs during configuration
+     */
     @Bean
     SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         return http
@@ -28,6 +39,12 @@ public class SecurityConfig {
                 .build();
     }
 
+    /**
+     * Configures the JWT authentication converter.
+     * Maps 'scope' claims to 'SCOPE_' granted authorities.
+     *
+     * @return the converter
+     */
     @Bean
     Converter<Jwt, ? extends AbstractAuthenticationToken> jwtAuthConverter() {
         // Map `scope` claim (space-separated) -> SCOPE_xxx authorities

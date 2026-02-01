@@ -5,9 +5,17 @@ import java.time.LocalDate;
 import java.util.UUID;
 
 import jakarta.persistence.*;
+import lombok.Getter;
+import lombok.Setter;
 
+/**
+ * Entity representing a bank statement.
+ * Stores metadata and a reference to the actual file in S3.
+ */
 @Entity
 @Table(name = "statements")
+@Getter
+@Setter
 public class Statement {
 
     @Id
@@ -44,8 +52,26 @@ public class Statement {
     @Column(name = "status", nullable = false, length = 32)
     private StatementStatus status;
 
+    /**
+     * Default constructor for JPA.
+     */
     protected Statement() {}
 
+    /**
+     * Constructs a new Statement.
+     *
+     * @param id          the UUID of the statement
+     * @param customerId  the ID of the customer
+     * @param accountId   the ID of the account
+     * @param periodStart the start date of the statement period
+     * @param periodEnd   the end date of the statement period
+     * @param objectKey   the key (path) of the file in S3
+     * @param contentType the MIME type of the file
+     * @param sizeBytes   the size of the file in bytes
+     * @param sha256      the SHA-256 hash of the file
+     * @param uploadedAt  the timestamp when the statement was uploaded
+     * @param status      the initial status of the statement
+     */
     public Statement(
             UUID id,
             String customerId,
@@ -84,6 +110,9 @@ public class Statement {
     public Instant getUploadedAt() { return uploadedAt; }
     public StatementStatus getStatus() { return status; }
 
+    /**
+     * Revokes the statement, changing its status to {@link StatementStatus#REVOKED}.
+     */
     public void revoke() {
         this.status = StatementStatus.REVOKED;
     }

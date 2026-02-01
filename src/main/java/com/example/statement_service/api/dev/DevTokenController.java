@@ -19,6 +19,10 @@ import java.time.Instant;
 import java.util.Base64;
 import java.util.Date;
 
+/**
+ * Controller for generating development tokens.
+ * Only active when the 'docker' profile is enabled.
+ */
 @Profile("docker")
 @RestController
 @RequestMapping("/api/v1/dev")
@@ -27,17 +31,40 @@ public class DevTokenController {
 
     private final byte[] secret;
 
+    /**
+     * Constructs a new DevTokenController.
+     *
+     * @param secretB64 the Base64-encoded JWT secret
+     */
     public DevTokenController(@Value("${app.security.jwtSecretBase64}") String secretB64) {
         this.secret = Base64.getDecoder().decode(secretB64);
     }
 
+    /**
+     * Request DTO for generating a development token.
+     *
+     * @param customerId the ID of the customer
+     * @param scope      the scope(s) for the token (e.g., "customer", "admin")
+     */
     public record DevTokenRequest(
             @NotBlank String customerId,
             String scope // e.g. "customer" or "admin" or "customer admin"
     ) {}
 
+    /**
+     * Response DTO containing the generated token.
+     *
+     * @param token the serialized JWT
+     */
     public record DevTokenResponse(String token) {}
 
+    /**
+     * Generates a JWT for development purposes.
+     *
+     * @param req the token request
+     * @return a response containing the generated token
+     * @throws Exception if signing the token fails
+     */
     @PostMapping("/token")
     public DevTokenResponse token(@RequestBody @Validated DevTokenRequest req) throws Exception {
         String scope = (req.scope() == null || req.scope().isBlank()) ? "customer" : req.scope();
