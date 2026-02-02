@@ -119,6 +119,9 @@ public class StatementController {
     @PreAuthorize("hasAuthority('SCOPE_customer') or hasAuthority('SCOPE_admin')")
     @GetMapping("/{id}")
     public StatementResponse get(Authentication auth, @PathVariable UUID id) {
+        if (!rateLimiter.tryConsume("statements:" + id)) {
+            throw new TooManyRequestsException("Too many download-link requests, please retry later.");
+        }
         String customerId = currentCustomer.customerId(auth);
         return StatementResponse.from(statementService.getForCustomer(id, customerId));
     }
@@ -165,7 +168,7 @@ public class StatementController {
      * @param http the HTTP request for auditing purposes
      * @return a redirect to the presigned S3 URL
      */
-    @PreAuthorize("hasAuthority('SCOPE_customer') or hasAuthority('SCOPE_admin')")
+    @PreAuthorize("hasAuthority('SCOPE_admin')")
     @GetMapping("/{id}/download")
     public ResponseEntity<Void> download(
             Authentication auth,
