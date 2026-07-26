@@ -2,13 +2,14 @@ package com.example.statement_service;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.scheduling.annotation.EnableScheduling;
 
 /**
  * Main application class for the Statement Service.
  * This class initializes and starts the Spring Boot application.
  */
 @SpringBootApplication
-@org.springframework.boot.context.properties.ConfigurationPropertiesScan
+@EnableScheduling
 public class StatementServiceApplication {
 
 	/**

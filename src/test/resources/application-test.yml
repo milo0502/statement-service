@@ -8,6 +8,33 @@ spring:
     hibernate:
       ddl-auto: create-drop
     database-platform: org.hibernate.dialect.H2Dialect
+  flyway:
+    enabled: false
 app:
+  s3:
+    endpoint: http://localhost:9000
+    externalEndpoint:
+    region: af-south-1
+    accessKey: test-access-key
+    secretKey: test-secret-key
+    bucket: statements-test
+    connectionTimeoutMillis: 2000
+    socketTimeoutMillis: 5000
+    apiCallTimeoutMillis: 10000
+    apiCallAttemptTimeoutMillis: 4000
+    maxRetries: 3
   security:
-    jwtSecretBase64: dGhpcy1pcy1hLXZlcnktc2VjcmV0LWtleS10aGF0LWlzLWJhc2U2NC1lbmNvZGVkCg==
+    jwt:
+      issuer: http://issuer.test
+      audience: statement-service-test
+      jwk-set-uri: http://issuer.test/.well-known/jwks.json
+  audit:
+    required: true
+    max-attempts: 3
+    retry-delay-millis: 0
+  orphan-cleanup:
+    enabled: false
+    batch-size: 100
+    min-object-age-seconds: 900
+    initial-delay-millis: 60000
+    fixed-delay-millis: 3600000

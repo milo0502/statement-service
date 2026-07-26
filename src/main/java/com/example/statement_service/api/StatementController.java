@@ -5,8 +5,8 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.util.UUID;
 
-import com.example.statement_service.ratelimit.InMemoryRateLimiter;
-import com.example.statement_service.service.BadRequestException;
+import com.example.statement_service.observability.StatementMetrics;
+import com.example.statement_service.ratelimit.RateLimiter;
 import com.example.statement_service.service.TooManyRequestsException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
@@ -42,11 +42,13 @@ import org.springframework.web.util.UriComponentsBuilder;
 public class StatementController {
 
     private static final Logger log = LoggerFactory.getLogger(StatementController.class);
+    private static final Duration REDIRECT_DOWNLOAD_TTL = Duration.ofMinutes(1);
 
     private final StatementService statementService;
     private final AuditService auditService;
     private final CurrentCustomer currentCustomer;
-    private final InMemoryRateLimiter rateLimiter;
+    private final RateLimiter rateLimiter;
+    private final StatementMetrics metrics;
 
     /**
      * Constructs a new StatementController with the required services.
@@ -55,11 +57,18 @@ public class StatementController {
      * @param auditService     the service for logging audit events
      * @param currentCustomer the helper for getting the current customer from authentication
      */
-    public StatementController(StatementService statementService, AuditService auditService, CurrentCustomer currentCustomer, InMemoryRateLimiter rateLimiter) {
+    public StatementController(
+            StatementService statementService,
+            AuditService auditService,
+            CurrentCustomer currentCustomer,
+            RateLimiter rateLimiter,
+            StatementMetrics metrics
+    ) {
         this.statementService = statementService;
         this.auditService = auditService;
         this.currentCustomer = currentCustomer;
         this.rateLimiter = rateLimiter;
+        this.metrics = metrics;
     }
 
     /**
@@ -84,6 +93,10 @@ public class StatementController {
             HttpServletRequest req,
             UriComponentsBuilder uriBuilder
     ) {
+        ApiRequestValidation.validateCustomerId(customerId);
+        ApiRequestValidation.validateAccountId(accountId);
+        ApiRequestValidation.validatePeriodRange(periodStart, periodEnd);
+
         Statement s = statementService.upload(customerId, accountId, periodStart, periodEnd, file);
         auditService.log(customerId, "UPLOAD", s.getId(), req.getRemoteAddr(), req.getHeader("User-Agent"));
 
@@ -96,7 +109,7 @@ public class StatementController {
     }
 
     /**
-     * Lists statements for the authenticated customer. Restricted to 'customer' or 'admin' scope.
+     * Lists statements. Customers see their own statements; admins see all statements.
      *
      * @param auth     the authentication object
      * @param pageable pagination information
@@ -104,13 +117,19 @@ public class StatementController {
      */
     @PreAuthorize("hasAuthority('SCOPE_customer') or hasAuthority('SCOPE_admin')")
     @GetMapping
-    public Page<StatementResponse> list(Authentication auth, Pageable pageable) {
+    public Page<StatementResponse> list(Authentication auth, Pageable pageable, HttpServletRequest req) {
+        ApiRequestValidation.validatePageQuery(req);
+        ApiRequestValidation.validateStatementPageable(pageable);
+
+        if (currentCustomer.isAdmin(auth)) {
+            return statementService.listForAdmin(pageable).map(StatementResponse::from);
+        }
         String customerId = currentCustomer.customerId(auth);
         return statementService.listForCustomer(customerId, pageable).map(StatementResponse::from);
     }
 
     /**
-     * Retrieves metadata for a specific statement. Restricted to the owner or 'admin'.
+     * Retrieves metadata for a specific statement. Customers can access their own statements; admins can access any statement.
      *
      * @param auth the authentication object
      * @param id   the UUID of the statement
@@ -119,15 +138,15 @@ public class StatementController {
     @PreAuthorize("hasAuthority('SCOPE_customer') or hasAuthority('SCOPE_admin')")
     @GetMapping("/{id}")
     public StatementResponse get(Authentication auth, @PathVariable UUID id) {
-        if (!rateLimiter.tryConsume("statements:" + id)) {
-            throw new TooManyRequestsException("Too many download-link requests, please retry later.");
+        if (currentCustomer.isAdmin(auth)) {
+            return StatementResponse.from(statementService.getForAdmin(id));
         }
         String customerId = currentCustomer.customerId(auth);
         return StatementResponse.from(statementService.getForCustomer(id, customerId));
     }
 
     /**
-     * Generates a presigned download link for a statement. Restricted to the owner or 'admin'.
+     * Generates a presigned download link for a statement. Customers can access their own statements; admins can access any statement.
      *
      * @param auth    the authentication object
      * @param id      the UUID of the statement
@@ -143,32 +162,29 @@ public class StatementController {
             @Valid @RequestBody DownloadLinkRequest request,
             HttpServletRequest http
     ) {
-        if (!rateLimiter.tryConsume("download-link:" + id)) {
-            throw new TooManyRequestsException("Too many download-link requests, please retry later.");
-        }
-
         log.info("Generating download link statementId={} ttlSeconds={}", id, request.ttlSeconds());
-        String customerId = currentCustomer.customerId(auth);
-        Statement s = statementService.getForCustomer(id, customerId);
+        Statement s = statementForDownload(auth, id);
+        statementService.validateDownloadable(s);
+        consumeDownloadQuota(id);
 
         Duration ttl = Duration.ofSeconds(request.ttlSeconds());
         String url = statementService.presignDownloadUrl(s, ttl);
 
-        auditService.log(customerId, "GENERATE_LINK", s.getId(), http.getRemoteAddr(), http.getHeader("User-Agent"));
+        auditService.log(s.getCustomerId(), "GENERATE_LINK", s.getId(), http.getRemoteAddr(), http.getHeader("User-Agent"));
+        metrics.downloadLinkGenerated();
 
         return new DownloadLinkResponse(url, Instant.now().plus(ttl));
     }
 
     /**
-     * Downloads a statement by redirecting to a presigned URL.
-     * Logs a 'DOWNLOAD' audit event.
+     * Downloads a statement by redirecting to a presigned URL. Customers can access their own statements; admins can access any statement.
      *
      * @param auth the authentication object
      * @param id   the UUID of the statement
      * @param http the HTTP request for auditing purposes
      * @return a redirect to the presigned S3 URL
      */
-    @PreAuthorize("hasAuthority('SCOPE_admin')")
+    @PreAuthorize("hasAuthority('SCOPE_customer') or hasAuthority('SCOPE_admin')")
     @GetMapping("/{id}/download")
     public ResponseEntity<Void> download(
             Authentication auth,
@@ -176,13 +192,13 @@ public class StatementController {
             HttpServletRequest http
     ) {
         log.info("Downloading statement id={}", id);
-        String customerId = currentCustomer.customerId(auth);
-        Statement s = statementService.getForCustomer(id, customerId);
+        Statement s = statementForDownload(auth, id);
+        statementService.validateDownloadable(s);
+        consumeDownloadQuota(id);
 
-        // Short TTL for redirect
-        String url = statementService.presignDownloadUrl(s, Duration.ofMinutes(1));
-
-        auditService.log(customerId, "DOWNLOAD", s.getId(), http.getRemoteAddr(), http.getHeader("User-Agent"));
+        String url = statementService.presignDownloadUrl(s, REDIRECT_DOWNLOAD_TTL);
+        auditService.log(s.getCustomerId(), "DOWNLOAD", s.getId(), http.getRemoteAddr(), http.getHeader("User-Agent"));
+        metrics.downloadLinkGenerated();
 
         return ResponseEntity.status(HttpStatus.FOUND)
                 .location(java.net.URI.create(url))
@@ -204,5 +220,18 @@ public class StatementController {
     ) {
         var s = statementService.revoke(id);
         auditService.log(s.getCustomerId(), "REVOKE", s.getId(), req.getRemoteAddr(), req.getHeader("User-Agent"));
+    }
+
+    private Statement statementForDownload(Authentication auth, UUID id) {
+        return currentCustomer.isAdmin(auth)
+                ? statementService.getForAdmin(id)
+                : statementService.getForCustomer(id, currentCustomer.customerId(auth));
+    }
+
+    private void consumeDownloadQuota(UUID id) {
+        if (!rateLimiter.tryConsume("download-link:" + id)) {
+            metrics.downloadLinkRateLimited();
+            throw new TooManyRequestsException("Too many download-link requests, please retry later.");
+        }
     }
 }

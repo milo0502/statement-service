@@ -3,16 +3,49 @@ spring:
     url: ${DB_URL}
     username: ${DB_USER}
     password: ${DB_PASS}
+    hikari:
+      maximum-pool-size: ${HIKARI_MAX_POOL_SIZE:10}
+      minimum-idle: ${HIKARI_MIN_IDLE:2}
+      connection-timeout: ${HIKARI_CONNECTION_TIMEOUT_MS:30000}
+      idle-timeout: ${HIKARI_IDLE_TIMEOUT_MS:600000}
+      max-lifetime: ${HIKARI_MAX_LIFETIME_MS:1800000}
+      leak-detection-threshold: ${HIKARI_LEAK_DETECTION_THRESHOLD_MS:60000}
+  jpa:
+    hibernate:
+      ddl-auto: validate
   flyway:
     enabled: true
 
 app:
   s3:
     endpoint: ${S3_ENDPOINT}
-    externalEndpoint: ${S3_EXTERNAL_ENDPOINT}
+    externalEndpoint: ${S3_EXTERNAL_ENDPOINT:}
     region: ${S3_REGION}
     accessKey: ${S3_ACCESS_KEY}
     secretKey: ${S3_SECRET_KEY}
     bucket: ${S3_BUCKET}
+    connectionTimeoutMillis: ${S3_CONNECTION_TIMEOUT_MS:2000}
+    socketTimeoutMillis: ${S3_SOCKET_TIMEOUT_MS:5000}
+    apiCallTimeoutMillis: ${S3_API_CALL_TIMEOUT_MS:10000}
+    apiCallAttemptTimeoutMillis: ${S3_API_CALL_ATTEMPT_TIMEOUT_MS:4000}
+    maxRetries: ${S3_MAX_RETRIES:3}
   security:
-    jwtSecretBase64: ${JWT_SECRET_BASE64}
+    jwt:
+      issuer: ${JWT_ISSUER}
+      audience: ${JWT_AUDIENCE}
+      jwk-set-uri: ${JWT_JWK_SET_URI}
+  ratelimit:
+    download-link:
+      limit: ${RATE_LIMIT_DOWNLOAD_LINK_LIMIT:10}
+      window-seconds: ${RATE_LIMIT_DOWNLOAD_LINK_WINDOW_SECONDS:60}
+      failure-mode: ${RATE_LIMIT_DOWNLOAD_LINK_FAILURE_MODE:DENY}
+  audit:
+    required: ${AUDIT_REQUIRED:true}
+    max-attempts: ${AUDIT_MAX_ATTEMPTS:3}
+    retry-delay-millis: ${AUDIT_RETRY_DELAY_MILLIS:100}
+  orphan-cleanup:
+    enabled: ${ORPHAN_CLEANUP_ENABLED:true}
+    batch-size: ${ORPHAN_CLEANUP_BATCH_SIZE:100}
+    min-object-age-seconds: ${ORPHAN_CLEANUP_MIN_OBJECT_AGE_SECONDS:900}
+    initial-delay-millis: ${ORPHAN_CLEANUP_INITIAL_DELAY_MILLIS:60000}
+    fixed-delay-millis: ${ORPHAN_CLEANUP_FIXED_DELAY_MILLIS:3600000}

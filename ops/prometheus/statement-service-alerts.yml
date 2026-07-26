@@ -1,0 +1,93 @@
+groups:
+  - name: statement-service.production-readiness
+    rules:
+      - alert: StatementServiceReadinessDown
+        expr: probe_success{job="statement-service-readiness"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          service: statement-service
+        annotations:
+          summary: Statement service readiness probe is down
+          description: The readiness endpoint has failed for more than 2 minutes. Remove the instance from traffic and inspect DB, S3, and application startup state.
+
+      - alert: StatementServiceDatabaseDown
+        expr: statement_dependency_health{dependency="db"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          service: statement-service
+        annotations:
+          summary: Statement service database dependency is unhealthy
+          description: The application cannot validate a PostgreSQL connection. Check database availability, credentials, network policy, and pool exhaustion.
+
+      - alert: StatementServiceS3Down
+        expr: statement_dependency_health{dependency="s3"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          service: statement-service
+        annotations:
+          summary: Statement service object-storage dependency is unhealthy
+          description: The application cannot HeadBucket the configured statement bucket. Check S3/MinIO availability, bucket name, credentials, IAM, and network path.
+
+      - alert: StatementServiceElevated5xxRate
+        expr: |
+          (
+            sum(rate(http_server_requests_seconds_count{job="statement-service",status=~"5.."}[5m]))
+            /
+            clamp_min(sum(rate(http_server_requests_seconds_count{job="statement-service"}[5m])), 1)
+          ) > 0.02
+        for: 10m
+        labels:
+          severity: warning
+          service: statement-service
+        annotations:
+          summary: Statement service 5xx rate is elevated
+          description: More than 2% of HTTP requests have returned 5xx for 10 minutes. Check application logs by correlation ID, dependency health, and recent deploys.
+
+      - alert: StatementServiceAuthFailuresElevated
+        expr: sum(rate(statement_auth_failure_total{job="statement-service"}[5m])) > 1
+        for: 10m
+        labels:
+          severity: warning
+          service: statement-service
+        annotations:
+          summary: Statement service auth failures are elevated
+          description: Authentication or authorization failures exceed 1 per second. Check identity-provider health, token audience/issuer rollout, client behavior, and abuse signals.
+
+      - alert: StatementServiceUploadFailuresElevated
+        expr: sum(rate(statement_upload_failure_total{job="statement-service"}[5m])) > 0.2
+        for: 10m
+        labels:
+          severity: warning
+          service: statement-service
+        annotations:
+          summary: Statement upload failures are elevated
+          description: Upload failures exceed 0.2 per second. Check file validation errors, S3 behavior, database writes, and client retry patterns.
+
+      - alert: StatementServiceRateLimitSpike
+        expr: sum(rate(statement_download_link_rate_limited_total{job="statement-service"}[5m])) > 1
+        for: 5m
+        labels:
+          severity: warning
+          service: statement-service
+        annotations:
+          summary: Download-link rate limiting is spiking
+          description: Download-link rate-limit responses exceed 1 per second. Check for abuse, broken clients, or quota settings that no longer match traffic.
+
+      - alert: StatementServiceHighP95Latency
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum by (le) (
+              rate(http_server_requests_seconds_bucket{job="statement-service",uri!~"/actuator.*"}[5m])
+            )
+          ) > 1
+        for: 10m
+        labels:
+          severity: warning
+          service: statement-service
+        annotations:
+          summary: Statement service p95 latency is high
+          description: Non-actuator p95 latency has exceeded 1 second for 10 minutes. Check DB pool pressure, S3 latency, JVM memory, and slow clients.

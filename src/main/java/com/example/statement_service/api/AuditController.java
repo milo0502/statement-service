@@ -2,6 +2,7 @@ package com.example.statement_service.api;
 
 import com.example.statement_service.api.dto.AuditEventResponse;
 import com.example.statement_service.persistence.AuditEventRepository;
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -59,8 +60,14 @@ public class AuditController {
     public Page<AuditEventResponse> list(
             @RequestParam(required = false) String customerId,
             @RequestParam(required = false) String action,
-            Pageable pageable
+            Pageable pageable,
+            HttpServletRequest req
     ) {
+        ApiRequestValidation.validateOptionalCustomerId(customerId);
+        ApiRequestValidation.validateAuditAction(action);
+        ApiRequestValidation.validatePageQuery(req);
+        ApiRequestValidation.validateAuditPageable(pageable);
+
         var page =
                 (customerId != null && action != null) ? repo.findByCustomerIdAndAction(customerId, action, pageable)
                         : (customerId != null) ? repo.findByCustomerId(customerId, pageable)

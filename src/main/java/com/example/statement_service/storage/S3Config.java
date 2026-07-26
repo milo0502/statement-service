@@ -1,6 +1,7 @@
 package com.example.statement_service.storage;
 
 import java.net.URI;
+import java.time.Duration;
 
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
@@ -8,7 +9,11 @@ import org.springframework.context.annotation.Configuration;
 
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
+import software.amazon.awssdk.core.client.config.ClientOverrideConfiguration;
+import software.amazon.awssdk.http.urlconnection.UrlConnectionHttpClient;
 import software.amazon.awssdk.regions.Region;
+import software.amazon.awssdk.retries.DefaultRetryStrategy;
+import software.amazon.awssdk.retries.api.RetryStrategy;
 import software.amazon.awssdk.services.s3.S3Configuration;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.presigner.S3Presigner;
@@ -31,6 +36,10 @@ public class S3Config {
     S3Client s3Client(S3Properties props) {
         return S3Client.builder()
                 .endpointOverride(URI.create(props.endpoint()))
+                .httpClientBuilder(UrlConnectionHttpClient.builder()
+                        .connectionTimeout(Duration.ofMillis(props.connectionTimeoutMillis()))
+                        .socketTimeout(Duration.ofMillis(props.socketTimeoutMillis())))
+                .overrideConfiguration(clientOverrideConfiguration(props))
                 .credentialsProvider(StaticCredentialsProvider.create(
                         AwsBasicCredentials.create(props.accessKey(), props.secretKey())
                 ))
@@ -39,6 +48,21 @@ public class S3Config {
                         .pathStyleAccessEnabled(true) // important for MinIO
                         .build()
                 )
+                .build();
+    }
+
+    private ClientOverrideConfiguration clientOverrideConfiguration(S3Properties props) {
+        // Keep S3 calls bounded so servlet threads are not held forever during network or storage issues.
+        // The SDK standard strategy retries transient network errors, throttling, and 5xx responses;
+        // client/auth failures such as 400 and 403 are not retried. Standard backoff includes jitter.
+        RetryStrategy retryStrategy = DefaultRetryStrategy.standardStrategyBuilder()
+                .maxAttempts(Math.max(1, props.maxRetries() + 1))
+                .build();
+
+        return ClientOverrideConfiguration.builder()
+                .apiCallTimeout(Duration.ofMillis(props.apiCallTimeoutMillis()))
+                .apiCallAttemptTimeout(Duration.ofMillis(props.apiCallAttemptTimeoutMillis()))
+                .retryStrategy(retryStrategy)
                 .build();
     }
 

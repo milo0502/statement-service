@@ -40,4 +40,6 @@ public interface StatementRepository extends JpaRepository<Statement, UUID> {
             LocalDate periodEnd,
             String sha256
     );
+
+    boolean existsByObjectKey(String objectKey);
 }

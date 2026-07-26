@@ -1,6 +1,8 @@
 package com.example.statement_service.ratelimit;
 
+import jakarta.validation.constraints.Min;
 import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.validation.annotation.Validated;
 
 /**
  * A configuration properties class that defines the rate-limiting settings for the application.
@@ -17,8 +19,24 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * This class is designed to work with Spring's {@code @ConfigurationProperties} to provide
  * type-safe access to configuration values.
  */
+@Validated
 @ConfigurationProperties(prefix = "app.ratelimit.download-link")
 public record RateLimitProperties(
+        @Min(1)
         int limit,
-        int windowSeconds
-) {}
+        @Min(1)
+        int windowSeconds,
+        FailureMode failureMode
+) {
+
+    public RateLimitProperties {
+        if (failureMode == null) {
+            failureMode = FailureMode.DENY;
+        }
+    }
+
+    public enum FailureMode {
+        ALLOW,
+        DENY
+    }
+}

@@ -7,7 +7,8 @@ import com.nimbusds.jose.crypto.MACSigner;
 import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
 import jakarta.validation.constraints.NotBlank;
-import org.springframework.beans.factory.annotation.Value;
+import com.example.statement_service.security.JwtValidationProperties;
+import com.example.statement_service.security.LocalJwtProperties;
 import org.springframework.context.annotation.Profile;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -17,27 +18,31 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.time.Instant;
 import java.util.Base64;
+import java.util.List;
 import java.util.Date;
 
 /**
  * Controller for generating development tokens.
- * Only active when the 'docker' profile is enabled.
+ * Only active for explicit local development profiles.
  */
-@Profile("docker")
+@Profile({"local", "dev"})
 @RestController
 @RequestMapping("/api/v1/dev")
 @Validated
 public class DevTokenController {
 
     private final byte[] secret;
+    private final JwtValidationProperties jwtProps;
 
     /**
      * Constructs a new DevTokenController.
      *
-     * @param secretB64 the Base64-encoded JWT secret
+     * @param localProps the local JWT signing properties
+     * @param jwtProps the JWT validation properties
      */
-    public DevTokenController(@Value("${app.security.jwtSecretBase64}") String secretB64) {
-        this.secret = Base64.getDecoder().decode(secretB64);
+    public DevTokenController(LocalJwtProperties localProps, JwtValidationProperties jwtProps) {
+        this.secret = Base64.getDecoder().decode(localProps.secretBase64());
+        this.jwtProps = jwtProps;
     }
 
     /**
@@ -73,7 +78,8 @@ public class DevTokenController {
                 .subject(req.customerId())
                 .claim("customer_id", req.customerId())
                 .claim("scope", scope) // space-separated -> SCOPE_ authorities
-                .issuer("statement-service-dev")
+                .audience(List.of(jwtProps.audience()))
+                .issuer(jwtProps.issuer())
                 .issueTime(new Date())
                 .expirationTime(Date.from(Instant.now().plusSeconds(60 * 60))) // 1 hour
                 .build();

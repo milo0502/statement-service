@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  push:
+    branches: ["main"]
+    tags: ["v*", "rc-*"]
+  pull_request:
+  workflow_dispatch:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Verify, build image, and scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    env:
+      TESTCONTAINERS_RYUK_DISABLED: "false"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Make Maven wrapper executable
+        run: chmod +x mvnw
+
+      - name: Set up Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "25"
+          cache: maven
+
+      - name: Verify Docker for Testcontainers
+        run: docker info
+
+      - name: Verify with Testcontainers
+        run: ./mvnw clean verify
+
+      - name: Build Docker image
+        run: docker build -t statement-service:${{ github.sha }} .
+
+      - name: Scan Docker image
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: statement-service:${{ github.sha }}
+          format: table
+          severity: HIGH,CRITICAL
+          vuln-type: os,library
+          ignore-unfixed: true
+          exit-code: "1"

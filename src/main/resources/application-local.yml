@@ -1,0 +1,26 @@
+spring:
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5433/statements}
+    username: ${DB_USER:statements}
+    password: ${DB_PASS:statements}
+  jpa:
+    hibernate:
+      ddl-auto: validate
+  flyway:
+    enabled: true
+
+app:
+  s3:
+    endpoint: ${S3_ENDPOINT:http://localhost:9000}
+    externalEndpoint: ${S3_EXTERNAL_ENDPOINT:http://localhost:9000}
+    region: ${S3_REGION:af-south-1}
+    accessKey: ${S3_ACCESS_KEY:minio}
+    secretKey: ${S3_SECRET_KEY:minio12345}
+    bucket: ${S3_BUCKET:statements}
+  security:
+    jwt:
+      issuer: ${JWT_ISSUER:http://localhost:8080/local-issuer}
+      audience: ${JWT_AUDIENCE:statement-service}
+      jwk-set-uri: ${JWT_JWK_SET_URI:http://localhost:8080/.well-known/jwks.json}
+    local-jwt:
+      secret-base64: ${LOCAL_JWT_SECRET_BASE64:c3VwZXItc2VjcmV0LWRldi1rZXktc3VwZXItc2VjcmV0LWRldi1rZXk=}

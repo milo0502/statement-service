@@ -1,24 +1,37 @@
 package com.example.statement_service.storage;
 
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.NotBlank;
 import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.validation.annotation.Validated;
 
 /**
  * Configuration properties for S3.
- *
- * @param endpoint  the S3 endpoint URL
- * @param region    the S3 region
- * @param accessKey the S3 access key
- * @param secretKey the S3 secret key
- * @param bucket    the S3 bucket name
  */
+@Validated
 @ConfigurationProperties(prefix = "app.s3")
 public record S3Properties(
+        @NotBlank
         String endpoint,
         String externalEndpoint,
+        @NotBlank
         String region,
+        @NotBlank
         String accessKey,
+        @NotBlank
         String secretKey,
-        String bucket
+        @NotBlank
+        String bucket,
+        @Min(1)
+        int connectionTimeoutMillis,
+        @Min(1)
+        int socketTimeoutMillis,
+        @Min(1)
+        int apiCallTimeoutMillis,
+        @Min(1)
+        int apiCallAttemptTimeoutMillis,
+        @Min(0)
+        int maxRetries
 ) {
     public String presignEndpoint() {
         if (externalEndpoint != null && !externalEndpoint.isBlank() && !externalEndpoint.startsWith("${")) {

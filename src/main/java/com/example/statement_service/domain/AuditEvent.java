@@ -63,7 +63,7 @@ public class AuditEvent {
         this.action = action;
         this.statementId = statementId;
         this.ip = ip;
-        this.userAgent = userAgent;
+        this.userAgent = userAgentSafe(userAgent);
         this.createdAt = createdAt;
     }
 

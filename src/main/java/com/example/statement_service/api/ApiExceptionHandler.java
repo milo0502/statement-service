@@ -1,10 +1,15 @@
 package com.example.statement_service.api;
 
+import com.example.statement_service.service.AuditLoggingException;
 import com.example.statement_service.service.TooManyRequestsException;
+import com.example.statement_service.observability.StatementMetrics;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
 
 import com.example.statement_service.service.BadRequestException;
 import com.example.statement_service.service.NotFoundException;
@@ -15,6 +20,12 @@ import com.example.statement_service.service.NotFoundException;
  */
 @RestControllerAdvice
 public class ApiExceptionHandler {
+
+    private final StatementMetrics metrics;
+
+    public ApiExceptionHandler(StatementMetrics metrics) {
+        this.metrics = metrics;
+    }
 
     /**
      * Handles {@link NotFoundException} and returns a 404 Not Found response.
@@ -38,6 +49,19 @@ public class ApiExceptionHandler {
     @ResponseStatus(HttpStatus.BAD_REQUEST)
     ProblemDetail badRequest(BadRequestException ex) {
         return ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, ex.getMessage());
+    }
+
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    ProblemDetail typeMismatch(MethodArgumentTypeMismatchException ex) {
+        String name = ex.getName() == null ? "request parameter" : ex.getName();
+        return ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, name + " has an invalid value");
+    }
+
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    @ResponseStatus(HttpStatus.PAYLOAD_TOO_LARGE)
+    ProblemDetail uploadTooLarge(MaxUploadSizeExceededException ex) {
+        return ProblemDetail.forStatusAndDetail(HttpStatus.PAYLOAD_TOO_LARGE, "PDF file exceeds the upload limit");
     }
 
     /**
@@ -68,5 +92,18 @@ public class ApiExceptionHandler {
     @ResponseStatus(HttpStatus.TOO_MANY_REQUESTS)
     ProblemDetail tooMany(TooManyRequestsException ex) {
         return ProblemDetail.forStatusAndDetail(HttpStatus.TOO_MANY_REQUESTS, ex.getMessage());
+    }
+
+    @ExceptionHandler(AuditLoggingException.class)
+    @ResponseStatus(HttpStatus.SERVICE_UNAVAILABLE)
+    ProblemDetail auditUnavailable(AuditLoggingException ex) {
+        return ProblemDetail.forStatusAndDetail(HttpStatus.SERVICE_UNAVAILABLE, "Audit logging is unavailable");
+    }
+
+    @ExceptionHandler(AccessDeniedException.class)
+    @ResponseStatus(HttpStatus.FORBIDDEN)
+    ProblemDetail accessDenied(AccessDeniedException ex) {
+        metrics.authForbidden();
+        return ProblemDetail.forStatusAndDetail(HttpStatus.FORBIDDEN, "Access denied");
     }
 }

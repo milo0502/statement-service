@@ -9,8 +9,8 @@ import org.springframework.context.annotation.Configuration;
  * <p>
  * This class integrates the rate-limiting properties defined in {@link RateLimitProperties}
  * with the Spring application context. It enables the configuration properties prefixed
- * with "app.ratelimit.download-link" to be loaded and used in other components, such as
- * the {@link InMemoryRateLimiter}.
+ * with "app.ratelimit.download-link" to be loaded and used by the shared database-backed
+ * rate limiter.
  * <p>
  * Key Features:
  * - Automatically binds the externalized configuration properties related to rate-limiting
