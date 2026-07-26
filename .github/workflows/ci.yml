@@ -49,6 +49,7 @@ jobs:
         with:
           image-ref: statement-service:${{ github.sha }}
           format: table
+          scanners: vuln
           severity: HIGH,CRITICAL
           vuln-type: os,library
           ignore-unfixed: true
